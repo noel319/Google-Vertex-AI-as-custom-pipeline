@@ -15,8 +15,7 @@
     }
   ],
   "jobAttributes": {
-    "pythonModule": "pipeli
-    ne-new",
+    "pythonModule": "pipeline-new",
     "pythonVersion": "3.7",
     "args": [
       "--user_input",

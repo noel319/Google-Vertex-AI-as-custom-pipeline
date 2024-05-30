@@ -80,6 +80,15 @@ def analyze_layoutlm():
     """
 
     return selected_template.format(**input_data)
+# choose template
+def choose_template(user_input):
+    industry = user_input.get('Industry', '').lower()
+    if industry == 'technology':
+        return 'templates/technology.html'
+    elif industry == 'health':
+        return 'templates/health.html'
+    else:
+        return 'templates/default.html'
 
 # Step 2: YOLO detects images inside the selected website template
 def detect_images(template_path):
