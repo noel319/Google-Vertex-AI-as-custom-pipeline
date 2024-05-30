@@ -1,0 +1,29 @@
+{
+  "displayName": "Carrot Pipeline",
+  "inputDefinitions": [
+    {
+      "name": "user_input",
+      "type": "string",
+      "description": "User input data in JSON format"
+    }
+  ],
+  "outputDefinitions": [
+    {
+      "name": "result",
+      "type": "string",
+      "description": "Final HTML template with content replaced"
+    }
+  ],
+  "jobAttributes": {
+    "pythonModule": "pipeli
+    ne-new",
+    "pythonVersion": "3.7",
+    "args": [
+      "--user_input",
+      "user_input"
+    ]
+  },
+  "supportedPipelineRuntimes": [
+    "aiplatform.googleapis.com/v1"
+  ]
+}
