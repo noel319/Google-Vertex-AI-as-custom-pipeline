@@ -6,6 +6,7 @@ from flask import Flask, request, jsonify
 from transformers import T5ForConditionalGeneration, LayoutLMModel, LayoutLMConfig
 from datetime import date
 import torch
+from bs4 import BeautifulSoup
 
 # Load models
 t5 = T5ForConditionalGeneration.from_pretrained("t5-small")
@@ -54,7 +55,7 @@ def analyze_layoutlm():
     <head><title>{Name}'s Website</title></head>
     <body>
         <h1>CONTENT_PLACEHOLDER</h1>
-        <img src='IMAGE_URL_PLACEHOLDER' alt='Industry Image'>
+        <img src='img/default.jpeg' alt='Industry Image'>
         <p>Location: {Location}</p>
         <p>Industry: {Industry}</p>
         <p>Description: {Description}</p>
@@ -63,16 +64,25 @@ def analyze_layoutlm():
     """
     return selected_template.format(**input_data)
 
-def detect_images(template_path):
+def detect_images(template_content):
     yolo = YOLO()  # Instantiate YOLO object
-    detected_images = yolo.detect(template_path)  # Perform image detection
+
+    # Parse HTML to extract image paths
+    soup = BeautifulSoup(template_content, 'html.parser')
+    image_tags = soup.find_all('img')
+    image_paths = [img['src'] for img in image_tags if 'src' in img.attrs]
+
+    detected_images = {}
+    for image_path in image_paths:
+        detected_images[image_path] = yolo.detect(image_path)
+    
     return detected_images
 
 def replace_images(detected_images, user_input):
     pexels_api_key = "YOUR_PEXELS_API_KEY"
     replaced_images = {}
-    for image_name in detected_images:
-        image_url = f"https://api.pexels.com/v1/search?query={user_input['Industry']}"
+    for image_name, _ in detected_images.items():
+        image_url = "img/search?query={user_input['Industry']}"
         headers = {"Authorization": f"Bearer {pexels_api_key}"}
         response = requests.get(image_url, headers=headers)
         if response.status_code == 200:
@@ -139,3 +149,4 @@ if __name__ == "__main__":
         "Description": "Lorem ipsum dolor sit amet."
     }
     main(user_input)
+
