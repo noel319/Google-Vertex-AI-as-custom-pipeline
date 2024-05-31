@@ -3,14 +3,75 @@ import requests
 import sys
 import os
 from flask import Flask, request, jsonify
-from transformers import T5ForConditionalGeneration, LayoutLMModel, LayoutLMConfig
+from transformers import T5ForConditionalGeneration, LayoutLMModel, LayoutLMConfig, T5Tokenizer
 from datetime import date
+import torch
+from torch.utils.data import DataLoader, Dataset
 import torch
 from bs4 import BeautifulSoup
 
 # Load models
 t5 = T5ForConditionalGeneration.from_pretrained("t5-small")
+t5_tokenizer = T5Tokenizer.from_pretrained("t5-small")
 layoutlm = LayoutLMModel(LayoutLMConfig())
+
+class CustomDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+    
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, idx):
+        return self.data[idx]['input'], self.data[idx]['target']
+    
+def train_t5(train_data, num_epochs=3, batch_size=4, learning_rate=1e-4):
+       
+    # Prepare dataset and data loader
+    dataset = CustomDataset(train_data)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    
+    # Define optimizer and loss function
+    optimizer = torch.optim.Adam(t5.parameters(), lr=learning_rate)
+    criterion = torch.nn.CrossEntropyLoss()
+    
+    # Training loop
+    for epoch in range(num_epochs):
+        t5.train()
+        total_loss = 0
+        
+        for input_seqs, target_seqs in dataloader:
+            optimizer.zero_grad()
+            
+            input_ids = t5_tokenizer.batch_encode_plus(input_seqs, return_tensors="pt", padding=True, truncation=True)['input_ids']
+            target_ids = t5_tokenizer.batch_encode_plus(target_seqs, return_tensors="pt", padding=True, truncation=True)['input_ids']
+            
+            outputs = t5(input_ids=input_ids, labels=target_ids)
+            loss = outputs.loss
+            total_loss += loss.item()
+            
+            loss.backward()
+            optimizer.step()
+        
+        print(f"Epoch {epoch + 1}, Loss: {total_loss / len(dataloader)}")
+    
+    # Save the trained model
+    t5.save_pretrained("saved_models/t5_custom")
+    t5_tokenizer.save_pretrained("saved_models/t5_custom")
+    
+    print("Training complete. Model saved.")
+selected_template = """
+    <html>
+    <head><title>{Name}'s Website</title></head>
+    <body>
+        <h1>CONTENT_PLACEHOLDER</h1>
+        <img src='img/default.jpeg' alt='Industry Image'>
+        <p>Location: {Location}</p>
+        <p>Industry: {Industry}</p>
+        <p>Description: {Description}</p>
+    </body>
+    </html>
+    """
 
 # YOLO class definition
 class YOLO:
@@ -78,25 +139,31 @@ def detect_images(template_content):
     
     return detected_images
 
-def replace_images(detected_images, user_input):
-    pexels_api_key = "YOUR_PEXELS_API_KEY"
+def replace_images(template_content, detected_images, user_input):
+    pexels_api_key = "https://www.pexels.com/@alexander-zeisl-1334539997/"
     replaced_images = {}
-    for image_name, _ in detected_images.items():
-        image_url = "img/search?query={user_input['Industry']}"
+
+    for image_path in detected_images.keys():
+        query = user_input['Industry']
+        image_url = f"https://api.pexels.com/v1/search?query={query}"
         headers = {"Authorization": f"Bearer {pexels_api_key}"}
         response = requests.get(image_url, headers=headers)
+        
         if response.status_code == 200:
             data = response.json()
             if data.get("photos"):
-                replaced_images[image_name] = data["photos"][0]["src"]["medium"]
-    return replaced_images
+                new_image_url = data["photos"][0]["src"]["medium"]
+                replaced_images[image_path] = new_image_url
+                template_content = template_content.replace(image_path, new_image_url)
+    
+    return template_content, replaced_images
 
 def replace_content(template_content, user_input):
     input_text = f"replace: {template_content} with: {json.dumps(user_input)}"
-    input_ids = t5.tokenizer.encode(input_text, return_tensors="pt")
+    input_ids = t5_tokenizer.encode(input_text, return_tensors="pt")
     outputs = t5.generate(input_ids)
-    replaced_content = t5.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
+    print(input_text)
+    replaced_content = t5_tokenizer.decode(outputs[0], skip_special_tokens=True)
     current_date = date.today().strftime("%Y-%m-%d")
     business_name = user_input.get("BusinessName", "Business Name")
     footer = f"<footer style='text-align: center;'>Copyright {current_date} {business_name} Made with AI by <a href='https://c4rrot.com'>Carrot</a></footer>"
@@ -118,15 +185,18 @@ def choose_template(user_input):
     else:
         return 'templates/default.html'
 
-def main(user_input):
+def main(user_input, train=False, train_data=None):
+    train_data=f"replace: {selected_template} with: {json.dumps(user_input)}"
+    if train:
+        train_t5(train_data)
     template_path = choose_template(user_input)
 
     with open(template_path, "r") as f:
         template_content = f.read()
-
+   
     detected_images = detect_images(template_content)
-    replaced_images = replace_images(detected_images, user_input)
-    generated_template = replace_content(template_content, user_input)
+    template_content, replaced_images = replace_images(template_content, detected_images, user_input)
+    generated_template = replace_content(template_content, user_input)    
     business_name = user_input.get("BusinessName", "business")
     send_to_subdomain(generated_template, business_name)
     return generated_template
